@@ -18,12 +18,12 @@ select * from attender where HIVprevalence = 0  #70 registros
 #De la tabla principal voy a sacar los nombres únicos de los condados y crear una tabla (counties) con el nombre y el estado
 #al que pertenecen
 
-SELECT DISTINCT attender.county, attender.state INTO counties
-FROM attender;
+SELECT DISTINCT attender.county, attender.state INTO counties FROM attender;
 
 #Podemos observar que hay condados con el mismo nombre en distintos estados de EEUU
 
-SELECT attender.county, Count(attender.county) AS OCURRENCIAS   INTO COUNTY_TMP
-FROM attender
+SELECT attender.county, Count(attender.county) AS OCURRENCIAS INTO COUNTY_TMP FROM attender
 GROUP BY attender.county;
+
+cuidadin
 

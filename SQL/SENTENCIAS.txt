@@ -24,5 +24,72 @@ SELECT DISTINCT attender.county, attender.state INTO counties FROM attender;
 
 SELECT attender.county, Count(attender.county) AS OCURRENCIAS INTO COUNTY_TMP FROM attender
 GROUP BY attender.county;
-xx
+
+#Seleccionamos todos los nombres que se repiten en varios estados
+SELECT * FROM COUNTY_TMP WHERE OCURRENCIAS >1
+
+
+#Vamos a ver cuantos countys tenemos de cada estado en nuestra base
+SELECT DISTINCTROW state, Count(attender.state) AS CENTROS FROM attender GROUP BY attender.state;
+
+#Cuantos son rurales (nonmetro) o urbanos.
+# rurales 
+select count(metro) from attender where metro ='non-metro'
+#urbanos
+select count(metro) from attender where metro ='metro'
+
+
+#listado de los estados ordenados por la distancia media a sus centros de salud, y suma de todas las millas que se realizarían si los centros atendieran a un usuario al mismo tiempo
+SELECT TOP 10 avg_distancia, total_distancia, state
+FROM (select state,  round(avg( dist_ssp ),2) as avg_distancia, sum(dist_ssp) as total_distancia from attender group by state ) order by avg_distancia desc
+
+#Buscamos estados por su nombre
+#por ejemplo todos los que tengan una x
+select * from attender where county like '*x*'
+
+#los que tengan dos caracteres concretos en cualquier posición de la cadena
+select * from attender where county like '*ax*'
+
+#que empiecen por l
+select * from attender where county like 'l*'
+
+#que acaben por a
+select * from attender where county like '*a'
+
+#que acaben en y, hay más
+select * from attender where county like '*y'
+
+#que contengan 'ou', casi todos
+select * from attender where county like '*[ou]*'
+
+
+#que empiece por n, le siga cualquier vocal de la a a la i, y acabe en cualquier cosa
+select * from attender where county like 'n[a-i]*'
+
+#cambiando los nombres
+update attender set state = 'TEXAS' where state = 'TX'
+
+#descargamos un csv de aqui http://goodcsv.com/geography/us-states-territories/ con las abreviaturas y nombres de los estados
+#los importamos a access (cuidado porque el formato de los datos es un poco especial, incluye ", comas para los miles, y aún así añade líneas de más (revisar últimas filas de la tabla))
+#la llamamos territories
+#habría que trabajar ese fichero pero no es el objetivo de esta práctica, mejor lo dejamos para Python y/o R.
+#en la nueva tabla generada hay que cambiar TX oir TEXAS, dada la modificación que hemos hecho anteriormente.
+
+#hacemos una consulta para saber los nombres reales de los estados (hasta ahora solo teníamos las abreviaturas)
+SELECT ATTENDER.COUNTY, TERRITORIES.Name, TERRITORIES.Abbreviation FROM ATTENDER LEFT JOIN TERRITORIES ON ATTENDER.state = TERRITORIES.Abbreviation;
+
+#añadimos una columna nueva a la tabla ATTENDER llamada estado
+ALTER TABLE attender ADD COLUMN ESTADO TEXT(40)
+
+#actualizamos el campo estado de la tabla attender con el nombre de la tabla territories
+UPDATE attender INNER JOIN TERRITORIES ON attender.state = TERRITORIES.Abbreviation SET attender.ESTADO = TERRITORIES.Name;
+
+#añadimos una columna nueva a la tabla ATTENDER llamada capital
+ALTER TABLE attender ADD COLUMN capital TEXT(60)
+
+#insertamos el nombre de la capital en la tabla attender
+UPDATE attender INNER JOIN TERRITORIES ON attender.state = TERRITORIES.Abbreviation SET attender.capital = TERRITORIES.Capital;
+
+
+
 

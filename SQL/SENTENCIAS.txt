@@ -1,0 +1,29 @@
+#La tabla attender recoge datos referentes a los centros de salud donde atienden a enfermos de VIH en EEUU. Refleja datos
+#como la distancia al centro de salud en cada condado, el porcentaje de asegurados en dichos condados, asi como 
+#ell porcentaje de personas que sufren la enfermedad.
+
+#en la tabla inicial vemos que hay valores de prevalencia iguales a  -1. Vamos a convertirlos en valores 0. Primero los 
+#contamos
+SELECT count(county) from attender where HIVprevalence = -1  #son 70 
+
+
+#actualizamos su valor a 0 
+update attender set HIVprevalence = 0 where HIVprevalence = -1
+
+
+#nos aseguramos de que se han actualizado correctamente
+select * from attender where HIVprevalence = 0  #70 registros
+
+
+#De la tabla principal voy a sacar los nombres únicos de los condados y crear una tabla (counties) con el nombre y el estado
+#al que pertenecen
+
+SELECT DISTINCT attender.county, attender.state INTO counties
+FROM attender;
+
+#Podemos observar que hay condados con el mismo nombre en distintos estados de EEUU
+
+SELECT attender.county, Count(attender.county) AS OCURRENCIAS   INTO COUNTY_TMP
+FROM attender
+GROUP BY attender.county;
+

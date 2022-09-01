@@ -24,6 +24,5 @@ SELECT DISTINCT attender.county, attender.state INTO counties FROM attender;
 
 SELECT attender.county, Count(attender.county) AS OCURRENCIAS INTO COUNTY_TMP FROM attender
 GROUP BY attender.county;
-
-cuidadin
+xx
 

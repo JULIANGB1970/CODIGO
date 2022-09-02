@@ -54,7 +54,7 @@ q2021 = pedidos[pedidos.anyo == 2020]
 print(q2021.ProductName.value_counts())
 
 #escribo los datos que he generado a un hoja excel
-writer = pd.ExcelWriter(archivo_data, engine = 'openpyxl', mode ='w')
+writer = pd.ExcelWriter(r'data.xlsx', engine = 'openpyxl', mode ='w')
 pedidos.to_excel(writer, sheet_name ='npedidos')
 anuales.to_excel(writer, sheet_name ='anuales')
 q2021.ProductName.value_counts().to_excel(writer, sheet_name ='cantidades')
@@ -64,7 +64,7 @@ writer.save()
 
 
 #abro la hoja
-os.startfile(r'\data.xlsx')
+os.startfile(r'data.xlsx')
 
 input("")
 

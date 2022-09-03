@@ -7,9 +7,14 @@ from os import path
 import pandas as pd 
 import time
 
+#programa para obtener la información exif de las imágenes (pej fotografías guardadas)
+#en muchos dispositivos o aplicaciones la fecha va incluida en el nombre del archivo
+#en otros no. Para este último caso,  esta función me ha servido a la hora de identificar esas
+#imágenes o poder incluirlas en una base de datos.
+
+
+
 lista = []
-
-
 #para utilizar esta función hay que instalar la librería mediante pip install exif
 def get_exif(fn):
     ret = {}

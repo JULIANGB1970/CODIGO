@@ -1,0 +1,309 @@
+---
+title: "ANALISIS PRINCIPAL COMPONENTS DATASET HOUSES"
+author: "JGB1970"
+date: '2022-08-31'
+output: 
+  html_document:
+    toc: true
+    toc_depth: 5
+    toc_float: true
+    collapsed: true
+    smooth_scroll: true
+    theme: journal
+    highlight: kate
+    df_print: paged
+    code_folding: hide
+    
+---
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+
+
+```{r}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(performance)
+library(moments)
+library(RColorBrewer)  
+library(fastDummies)
+library(glmnet)
+library(ISLR)	
+library(recipes)
+library(rsample)
+library(glmnetUtils)
+library(caret)
+library(openxlsx)
+library(writexl)
+library(corrplot)
+library(car)
+library(olsrr)
+library(GGally)
+library(MASS)
+library(tseries)
+library(naniar)
+library(ggpubr)
+library(broom)
+library(lmtest)
+library(leaps)
+library(recipes)
+select <- dplyr::select
+library(circlize)
+library(FactoMineR)
+library(factoextra)
+
+
+
+```
+
+
+```{r}
+
+df <- read.csv("PON TU RUTA AL DATSET AQUI")
+df <- df %>% select(everything(), -id,-date)
+df$bathrooms <-  as.integer(df$bathrooms)
+df$floors <-  as.integer(df$floors)
+
+```` 
+
+
+
+<br>
+<font size="3" color="green">Para el modelo PCA, modifico la clase de algunas variables.</font>
+
+```{r}
+
+dfpc <- df %>% mutate(
+  condition = as.character(condition),
+  grade = as.character(grade),
+  waterfront = as.character(waterfront),
+  zipcode = factor(zipcode)
+)
+```
+
+<br>
+<font size="3" color="green"> En el caso de condition y grade, al haber pocos registros para determinados niveles,
+lo que he hecho ha sido reordenarlos y/o agruparlos para que los grupos sean más compactos y numerosos, ya que si no, tenía
+errores al generar los check_models </font>
+
+<br>
+<font size="3" color="green">Aqui sumo los 30 registros de la condición 1 a los 172 de la condicion 2. En el caso de la variable grade,
+reduzco de 13 a 10 las categorías existentes.</font>
+
+```{r}
+
+dfpc <- mutate(dfpc, condition = ifelse(condition == 1,2,condition))
+
+dfpc$grade <- ntile(dfpc$grade, 10)
+
+```
+<br>
+<font size="3" color="green">
+He quitado también las variables yr_renovated y view, porque en repetidas simulaciones, y analizando la composición y graficando veía que
+era posible que influyeran en el modelo negativamente por su escasa información.</font>
+
+```{r}
+dfpc <- dfpc %>% select(everything(), -yr_renovated, -view)
+```
+
+<br>
+<font size="3" color="green">Aqui genero un train y un test.</font>
+
+
+```{r}
+
+set.seed(1234)
+split <- initial_split(data = dfpc, prop = 0.9)
+train <- training(split)
+test <- testing(split)
+```
+
+
+<br><font size="3" color="green">Elijo las variables numéricas con las que trabaja el método PCA.</font>
+
+
+```{r}
+train_num <- train %>%
+  select(where(is.numeric), - c(price))
+```
+
+
+<br><font size="3" color="green">Creo el modelo con el subconjunto train.</font>
+
+```{r}
+dfpca = PCA(train_num, scale.unit = T,
+          graph = T,
+          ncp = ncol(train_num) - 1)
+```
+
+<br><font size="3" color="green">Obtenemos gráficamente la contribución de cada una de las dimensiones a la explicación de la varianza.</font>
+
+```{r}
+fviz_screeplot(dfpca) 
+```
+
+<br><font size="3" color="green">En esta tabla, obtenemos los valores numéricos reflejados en el gráfico anterior. </font>
+
+```{r}
+dfpca$eig 
+```
+
+<br><font size="3" color="green">Aqui vemos la aportación de cada uno de las variables a cada una de las dimensiones.</font>
+
+```{r}
+var <- get_pca_var(dfpca)
+head(var$contrib, 20) 
+```
+
+<br><font size="3" color="green">En estos gráficos visualizamos esa aportación en las dos primeras dimensiones.</font>
+
+```{r}
+fviz_contrib(dfpca, choice = "var", axes = 1, top = 10)
+fviz_contrib(dfpca, choice = "var", axes = 2, top = 10)
+```
+
+
+```{r}
+pcavartrain <- predict(dfpca, newdata = train)
+pcavartrain <- as.data.frame(pcavartrain$coord)
+train_generadopca <- bind_cols(train, pcavartrain)
+```
+
+<br><font size="3" color="green">Creo varios modelos para analizar y comparar.</font>
+```{r}
+modelpca <- lm(log(price)~Dim.1 + Dim.2 + Dim.3 + Dim.5  +condition + grade+ zipcode + waterfront  , data = train_generadopca, na.action= na.exclude)
+summary(modelpca)
+```
+
+<br><font size="3" color="green">En este modelo, el VIF del zipcode sale un poco alto. </font>
+```{r}
+vif(modelpca) 
+```
+
+
+<br><font size="3" color="green">Voy a coger sólo las tres primeras dimensiones manteniendo zipcode.</font>
+```{r}
+modelpca <- lm(log(price)~Dim.1 + Dim.2 + Dim.3 + condition +grade + waterfront + zipcode  , data = train_generadopca, na.action= na.exclude)
+summary(modelpca)
+check_model(modelpca)
+plot(modelpca)
+```
+
+<br>
+<br>
+<br><font size="3" color="green">En este caso el VIF está contenido y se llega a casi un 86% de R ajustado.</font>
+```{r}
+vif(modelpca) 
+```
+
+<br><font size="3" color="green">No hay normalidad en los residuos.</font>
+
+```{r}
+moments::jarque.test(modelpca$residuals)
+```
+
+<br><font size="3" color="green">Tenemos heterocedasticidad</font>
+```{r}
+lmtest::bptest(modelpca)
+```
+
+
+
+<br><font size="3" color="blue">Le echo un vistazo a como se comportan los componentes respecto a la variable independiente.</font>
+```{r}
+train_generadopca %>% select(Dim.1, Dim.2, Dim.3, price) %>%
+  pivot_longer(-price) %>%
+  ggplot() + 
+  geom_point(aes(x = value, y = price)) +
+  facet_wrap(~name, scales = 'free_x')
+```
+
+<br><font size="3" color="green">Intento ver alguna interaccion en las dimensiones.La primera dimensión se relaciona perfectamente con price.</font>
+
+
+```{r}
+train_generadopca %>%
+  select(!where(is.numeric),
+         price, Dim.1) %>%
+  pivot_longer(-c(price, Dim.1)) %>%
+  ggplot() +
+  geom_point(aes(x = Dim.1, y = price, col = value)) +
+  facet_wrap(~name) + guides(col = FALSE)
+```
+
+<br><font size="3" color="green">La segunda también tiene buena pinta.</font>
+```{r}
+train_generadopca %>%
+  select(!where(is.numeric),
+         price, Dim.2) %>%
+  pivot_longer(-c(price, Dim.2)) %>%
+  ggplot() +
+  geom_point(aes(x = Dim.2, y = price, col = value)) +
+  facet_wrap(~name) + guides(col = FALSE)
+```
+
+
+<br><font size="3" color="green">No se ven patrones.</font>
+
+```{r}
+train_generadopca %>%
+  select(!where(is.numeric),
+         price, Dim.3) %>%
+  pivot_longer(-c(price, Dim.3)) %>%
+  ggplot() +
+  geom_point(aes(x = Dim.3, y = price, col = value)) +
+  facet_wrap(~name) + guides(col = FALSE)
+```
+
+
+
+
+<br><font size="3" color="blue">Ahora paso a las predicciones y a la valoración del modelo. Creo el dataset con los datos del subconjunto test, a través de PCA</font>
+
+
+
+```{r}
+pcavartest <- predict(dfpca, newdata = test)
+pcavartest <- as.data.frame(pcavartest$coord)
+test_generadopca <- bind_cols(test, pcavartest)
+```
+
+<br><font size="3" color="green">Hallo la predicción del precio para el dataset test.</font>
+
+```{r}
+preciopcatest <- predict(modelpca, test_generadopca) %>%
+  exp()
+```
+
+<br><font size="3" color="green">Hallo la predicción del precio para el dataset train.</font>
+
+```{r}
+preciopcatrain <- predict(modelpca, train_generadopca) %>%
+  exp()
+```
+
+
+```{r}
+eval_results <- function(true, predicted, df) {
+  SSE <- sum((predicted - true)^2)
+  SST <- sum((true - mean(true))^2)
+  R_square <- 1 - SSE / SST
+  RMSE = sqrt(SSE/nrow(df))
+  
+  
+  data.frame(
+    RMSE = RMSE,
+    Rsquare = R_square
+  )
+}
+```
+
+<br><font size="3" color="green">Parece que los resultados son mejores en el dataset test que en el propio train.</font>
+
+```{r}
+eval_results(train$price, preciopcatrain, train)
+eval_results(test$price, preciopcatest, test)
+```

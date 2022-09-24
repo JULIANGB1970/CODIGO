@@ -1,0 +1,331 @@
+---
+title: "LASSO, RIDGE Y ELASTICNET"
+author: "JGB1970"
+date: '2022-08-31'
+output: 
+  html_document:
+    toc: true
+    toc_depth: 5
+    toc_float: true
+    collapsed: true
+    smooth_scroll: true
+    theme: journal
+    highlight: kate
+    df_print: paged
+    code_folding: hide
+    
+---
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+
+
+```{r}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(performance)
+library(moments)
+library(RColorBrewer)  
+library(fastDummies)
+library(glmnet)
+library(ISLR)	
+library(recipes)
+library(rsample)
+library(glmnetUtils)
+library(caret)
+library(openxlsx)
+library(writexl)
+library(corrplot)
+library(car)
+library(olsrr)
+library(GGally)
+library(MASS)
+library(tseries)
+library(naniar)
+library(ggpubr)
+library(broom)
+library(lmtest)
+library(leaps)
+library(recipes)
+select <- dplyr::select
+library(circlize)
+library(FactoMineR)
+library(factoextra)
+
+
+
+```
+#APLICACION LASSO, RIDGE Y ELASTICNET SOBRE EL DATASET
+
+```{r}
+
+df <- read.csv("PON TU RUTA AL DATASET AQUI")
+df <- df %>% select(everything(), -id,-date)
+df$bathrooms <-  as.integer(df$bathrooms)
+df$floors <-  as.integer(df$floors)
+
+```
+<br>
+<br>
+<br>
+<br><font size="3" color="green"><b>Utilizaré las técnicas de regularización Lasso, Ridge y Elasticnet. Estas técnicas reducen el número de
+predictores: en el caso de Ridge, asignándoles betas pequeños, Lasso saca las variables del modelo directamente. Elasticnet es una mezcla de los anteriores procedimientos. </b></font>
+
+
+<br><font size="3" color="green">Para aplicarlas  dividimos el dataframe en dos partes, test y training (90%). La idea es preprocesar los datos mediante el objeto recipe (hacer transformaciones BoxCox, variables dummy, edición de determinadas columnas, búsqueda de NAs, recipe tiene una gran cantidad de funciones para aplicar al dataset...) trabajando sobre los datos de train. Mediante prep(), realizamos todos los cálculos necesarios para satisfacer los requerimientos de recipe (por ejemplo,calcular medias y desviaciones para centrar y escalar mediante step_normalize). Con bake() realizamos los pasos del preprocesamiento sobre los datasets, tanto train como test, para que las estructuras
+sean semejantes.</font>
+
+
+```{r}
+set.seed(1234)
+train_test_split <- initial_split(df, 0.9) 
+train <- training(train_test_split)
+test <- testing(train_test_split)
+
+
+```
+
+<br><font size="3" color="green">Modifico la clase de estas variables, para convertirlas en nominales y obtener dummies en el recipe.</font>
+
+
+
+```{r}
+train <- train %>% mutate(
+  grade = as.factor(grade),
+  zipcode = as.factor(zipcode),
+  condition = as.factor(condition),
+  waterfront = as.factor(waterfront))
+```
+
+
+<br><font size="3" color="green">Inicializamos el objeto recipe indicando la variable dependiente y el dataset.</font>
+
+```{r}
+rec_obj <- recipe(price ~ ., data = train)
+```
+
+<br><font size="3" color="green"> En esta parte del código, transformo las variables nominales en dummies. No normalizo, ni hago BoxCox, para poder comparar en las predicciones entre estos modelos y los creados en aprtados anteriores. (RMSE)</font>
+
+
+
+```{r}
+
+rec_obj <- rec_obj %>%
+  step_dummy(all_nominal())
+  
+
+
+#rec_obj <- rec_obj %>%
+  #step_normalize(all_numeric(), - price)
+
+#rec_obj <- rec_obj %>%
+ # step_BoxCox(price)
+
+
+trained_rec <- prep(rec_obj, training = train)
+```
+<br>
+<font size="3" color="green">Aplico a los datasets train and test los pasos diseñados en el recipe.</font>
+
+```{r}
+train_data <- bake(trained_rec, new_data = train)
+test_data  <- bake(trained_rec, new_data = test)
+
+```
+
+<br>
+<font size="3" color="red">Aquí comparo las estructuras generadas con el bake(). Me queda la duda de saber si tendría que haber realizado
+la conversión a factores en el dataset original, antes de dividir en test y train, ya que en el caso de la variable grade hay un único registro
+con el valor 1: si dicho valor cae inicialmente en el set de test, ¿cómo puede generar la columna dummy apropiada el logaritmo en el recipe de train? En los ejercicios de clase, veo que se comparan las estructuras de los datasets, aquí me salen idénticas. (grade = 1 cae en train)</font>
+```{r}
+
+testi <- test[test$grade==1,]
+traini <- train[train$grade==1,]
+testi
+traini
+colnames(train_data)
+colnames(test_data)
+```
+
+
+
+<br>
+<font size="3" color="green">En este paso creo una matriz a partir del dataframe (lo exige la función) con las columnas predictoras y 
+extraigo el valor de la dependiente. El valor de alpha especifica el modelo a utilizar entre los tres posibles. Genero los modelos.</font>
+```{r}
+
+x_train <- train_data %>%
+  select(-price) %>%
+  as.data.frame() 
+y_train <- train_data %>% pull(price)
+
+
+
+fit.lasso.cv <- cv.glmnet(x_train %>% as.matrix(), y_train, type.measure="mse", alpha=1, family="gaussian", nfolds = 30)
+fit.ridge.cv <- cv.glmnet(x_train%>% as.matrix(), y_train, type.measure="mse", alpha=0,family="gaussian", nfolds = 30)
+fit.elnet.cv <- cv.glmnet(x_train%>% as.matrix(), y_train, type.measure="mse", alpha = 0.5, family="gaussian", nfolds = 30)
+
+```
+
+
+<br>
+<font size="3" color="green">Obtenemos los coeficientes de la regresión lineal a partir del lambda mínimo que optimiza cada modelo.</font>
+
+```{r}
+
+coef(fit.elnet.cv, s = "lambda.min")
+coef(fit.lasso.cv, s = "lambda.min")
+coef(fit.ridge.cv, s = "lambda.min")
+```
+
+
+<br>
+<font size="3" color="green">Esta función nos proporcionará, como en casos anteriores el RMSE y el R de cada modelo.</font>
+
+```{r}
+eval_results <- function(true, predicted, df) {
+  SSE <- sum((predicted - true)^2)
+  SST <- sum((true - mean(true))^2)
+  R_square <- 1 - SSE / SST
+  RMSE = sqrt(SSE/nrow(df))
+  
+  
+data.frame(
+    RMSE = RMSE,
+    Rsquare = R_square
+  )
+}
+
+```
+
+
+<br>
+<font size="3" color="green">Preparo las predictoras del test_data, el test que hemos pasado por el bake() y saco la variable price, para
+las predicciones posteriores.</font>
+
+```{r}
+
+x_test <- test_data %>%
+  select(-price) %>%
+  as.data.frame() 
+
+y_test <- test_data %>% pull(price)
+```
+
+
+<br>
+<font size="3" color="green">Introduzco en variables que utilizaré luego los lambdas minimos para cada modelo.</font>
+```{r}
+lambda_elnet_best <- fit.elnet.cv$lambda.min
+lambda_lasso_best <-  fit.lasso.cv$lambda.min
+lambda_ridge_best <- fit.ridge.cv$lambda.min
+```
+
+<br>
+<font size="3" color="green">Genero las predicciones y evalúo el RMSE y la R para cada una de las técnicas, en el test y el train.</font>
+
+<br>
+<font size="3" color="red">MODELO LASSO.</font>
+<br>
+<font size="3" color="blue">Lasso: Predicción y evaluación sobre train.</font>
+```{r}
+predictions_train <- predict(fit.lasso.cv, s = lambda_lasso_best, newx = x_train%>% as.matrix())
+eval_results(y_train, predictions_train, x_train%>% as.matrix())
+
+```
+<br>
+<font size="3" color="blue">Lasso: Predicción y evaluación sobre test.</font>
+```{r}
+predictions_test_la <- predict(fit.lasso.cv, s = lambda_lasso_best, newx = x_test%>% as.matrix())
+eval_results(y_test, predictions_test_la, test_data)
+#voy creando este dataframe para generar gráficos
+graf_lasso <- data.frame(y_test, predictions_test_la)
+graf_lasso$modelo <- "LASSO"
+
+```
+
+<br>
+<font size="3" color="red">MODELO RIDGE.</font>
+<br>
+<font size="3" color="blue">Ridge: Predicción y evaluación sobre train.</font>
+```{r}
+predictions_train <- predict(fit.ridge.cv, s = lambda_ridge_best, newx = x_train%>% as.matrix())
+eval_results(y_train, predictions_train, x_train%>% as.matrix())
+```
+<br>
+<font size="3" color="blue">Ridge: Predicción y evaluación sobre test.</font>
+```{r}
+predictions_test_ri <- predict(fit.ridge.cv, s = lambda_ridge_best, newx = x_test%>% as.matrix())
+eval_results(y_test, predictions_test_ri,test_data)
+#voy creando este dataframe para generar gráficos
+graf_ridge <- data.frame(y_test, predictions_test_ri)
+graf_ridge$modelo <- "RIDGE"
+```
+<br>
+<font size="3" color="red">MODELO ELASTICNET.</font>
+<br>
+<font size="3" color="blue">Elasticnet: Predicción y evaluación sobre train.</font>
+
+```{r}
+predictions_train <- predict(fit.elnet.cv, s = lambda_elnet_best, newx = x_train%>% as.matrix())
+eval_results(y_train, predictions_train, x_train%>% as.matrix())
+```
+<br>
+<font size="3" color="blue">Elasticnet: Predicción y evaluación sobre test.</font>
+
+```{r}
+predictions_test_el <- predict(fit.elnet.cv, s = lambda_elnet_best, newx = x_test%>% as.matrix())
+eval_results(y_test, predictions_test_el,test_data)
+#voy creando este dataframe para generar gráficos
+graf_elastic <- data.frame(y_test, predictions_test_el)
+graf_elastic$modelo <- "ELASTIC"
+```
+
+<br>
+<font size="3" color="blue">En este caso, el mejor modelo sería Lasso, presenta un menor RMSE (también mejor R). </font>
+
+
+<br>
+<font size="3" color="green">Grafico valores reales contra predichos. Aunque los tres gráficos parecen iguales, se pueden constatar pequeñas
+diferencias entre los valores portados por cada modelo</font>
+
+```{r}
+
+
+lass  <-  ggplot(data = graf_lasso, aes(x = y_test, y= s1 ))+
+  geom_point() +labs(title= "MODELO LASSO", x="Valores reales", y = "Valores predichos")
+
+
+rid <- ggplot(data = graf_ridge, aes(x = y_test, y= s1 ))+
+  geom_point() +labs(title= "MODELO RIDGE", x="Valores reales", y = "Valores predichos")
+
+
+elas <- ggplot(data = graf_elastic, aes(x = y_test, y= s1 ))+
+  geom_point() + labs(title= "MODELO ELASTICNET", x="Valores reales", y = "Valores predichos")
+
+lista <- list(lass, rid, elas)
+  
+ggarrange(plotlist=lista,  ncol = 2, nrow = 2)
+
+
+
+grafico <- rbind(graf_lasso, graf_ridge, graf_elastic)
+grafico %>% ggplot(aes(x = y_test, y= s1, color = modelo, shape = modelo ))+
+  geom_point() + labs(title= "LOS TRES MODELOS", x="Valores reales", y = "Valores predichos")
+
+
+
+```
+
+
+
+
+
+
+
+
+
+

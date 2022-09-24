@@ -1,0 +1,693 @@
+---
+title: "ANALISIS DATASET HOUSES"
+author: "JGB1970"
+date: '2022-08-31'
+output: 
+  html_document:
+    toc: true
+    toc_depth: 5
+    toc_float: true
+    collapsed: true
+    smooth_scroll: true
+    theme: journal
+    highlight: kate
+    df_print: paged
+    code_folding: hide
+    
+---
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+
+
+```{r}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(performance)
+library(moments)
+library(RColorBrewer)  
+library(fastDummies)
+library(glmnet)
+library(ISLR)	
+library(recipes)
+library(rsample)
+library(glmnetUtils)
+library(caret)
+library(openxlsx)
+library(writexl)
+library(corrplot)
+library(car)
+library(olsrr)
+library(GGally)
+library(MASS)
+library(tseries)
+library(naniar)
+library(ggpubr)
+library(broom)
+library(lmtest)
+library(leaps)
+library(recipes)
+select <- dplyr::select
+library(circlize)
+library(FactoMineR)
+library(factoextra)
+
+
+
+```
+
+
+
+# INTRODUCCIÓN
+
+
+
+<br>
+<font size="3" color="green">
+ 
+
+Voy a analizar el precio de las casas en King County. Haré un breve repaso a los campos del dataset:</font>
+
+<font size="3" color="blue">
+id es un campo de identificación único de la casa en cuestión<br>
+date: 	Fecha en la que se vendió<br>
+price: 	Precio de venta<br>
+bedrooms: 	número de habitaciones<br>
+bathrooms: 	Número de baños<br>
+sqft_living: 	m2 cubiertos<br>
+sqft_lot: 	m2 totales de la finca<br>
+floors: 	número de pisos<br>
+waterfront: 	booleano de vistas al mar o no.<br>
+view: 	Calificación de 0 a 4 de las vistas que tiene<br>
+condition: 	Estado de la casa, de 1 a 5.<br>
+grade: 	Calificación de los materiales con los que se ha construido la casa.<br>
+sqft_above: 	Metros cuadrados sobre la superficie<br>
+sqft_basement: 	Metros del sótano<br>
+yr_built: 	Año construcción<br>
+yr_renovated: 	Año de renovación<br>
+zipcode: 	código postal<br>
+lat: 	Latitud<br>
+long: 	Longitud<br>
+sqft_liv15: 	Media de los metros cuadrados cubiertos de las 15 casas más cercanas<br>
+sqft_lot15: 	Media de los metros cuadrados de la finca de las 15 casas más cercanas<br>
+</font>
+<br>
+<font size="3" color="green">
+Los campos id y Date los voy a desechar:  no aportan información al modelo de regresión que se quiere diseñar (el primero es un identificador y el segundo una fecha que en principio obviamos para centrarnos en el análisis sin su vertiente temporal. El campo bathrooms aparece como un campo continuo, no tiene mucho sentido, lo voy a convertir en integer (haré lo mismo con floors). Aunque analizaremos más tarde las correlaciones, los campos sqft_above y sqft_basement suman el total de sqft_living. Echándole un vistazo al summary y al dataset, podemos observar que algunas propiedades no tienen baño, otras no tienen habitaciones, y en varios casos, ni lo uno ni lo otro (además suponen registros extremos que pueden afectar al modelo).
+
+Hay variables como condition, grade, yr_built, que presentan pocos registros para determinados niveles de clasificación. Esto me ha generado problemas sobre todo en el PCA. La solución que he adoptado ha sido la reclasificación de los valores mediante la función tile o sumando los escasos registros de alguna categoría a la categoría adyacente.
+
+
+A mi modo de ver, el precio de las casas viene determinado por dos factores principales: sus características y su localización. En este dataset,
+la localización se puede analizar por medio de la latitud y la longitud, o por el código postal (método más arbitrario); las características
+de la casa vienen reflejadas en el resto de campos.</font>
+
+# ESTUDIO DEL DATASET
+
+## Summary y Nas:
+
+
+
+```{r}
+
+df <- read.csv("PON AQUI TU RUTA AL DATASET")
+df <- df %>% select(everything(), -id,-date)
+df$bathrooms <-  as.integer(df$bathrooms)
+df$floors <-  as.integer(df$floors)
+summary(df)
+
+```
+
+<br>
+<font size="3" color="green">
+No hay NAs.
+</font>
+
+```{r}
+df %>%
+  summarise_all(.funs = ~ mean(is.na(.)))
+```
+## Análisis de las variables:
+
+### Numéricas: 
+
+<br>
+<font size="3" color="green">Como podemos observar a continuación, todas las variables son numéricas, pero algunas de ellas son nominales y habrá
+que tenerlo en cuenta a la hora de diseñar los modelos para aprovechar la información que suministran y para que los algoritmos no las traten como
+valores continuos. Es el caso de grade, condition, waterfront, zipcode...</font>
+
+```{r}
+str(df)
+```
+
+<br>
+<font size="3" color="green">
+Paso a ver ahora las distribuciones de las variables: </font>
+  
+```{r}
+
+  df %>%
+  select(where(is.numeric)) %>%
+  pivot_longer(everything()) %>%
+  ggplot() + 
+  geom_histogram(aes(x = value), color ='orange' , bins= 50) + 
+  facet_wrap(~ name, scales = "free")
+
+```
+  
+#### La variable objetivo: Price 
+
+
+<br>
+<font size="3" color="green"> En principio, la variable objetivo, que es price, no presenta una figura simétrica y sí muchos outliers. </font>
+
+```{r}
+
+df %>%
+  ggplot() + 
+  geom_histogram(aes(x = price, y =stat(count)), color ='white', fill= "orange" , bins= 50) 
+  
+df %>%
+  ggplot() + 
+  geom_boxplot(aes(x = price), color ='black', fill= "blue" ) 
+
+```
+
+
+<br>
+<font size="3" color="green"> Debido al número de registros, no puedo aplicar un test de Saphiro, pero si Jarque Bera.</font>
+
+```{r}  
+  jarque.bera.test(df$price)
+```
+
+<br>
+<font size="3" color="green">Rechazamos la hipótesis nula de normalidad por el bajo valor del pvalue.
+
+Vamos a probar a hacer transformaciones sobre esta variable para ver si podemos conseguir esa normalidad: </font>
+  
+   <font size="3" color="blue">1) Le aplicaremos el logaritmo: </font>
+```{r}  
+  
+        df %>%     ggplot( aes(log(price))) + 
+              geom_histogram(bins = 100)
+```
+
+     
+<br>
+<font size="3" color="green">El gráfico tiene mejor pinta:</font>
+  
+```{r} 
+  
+        log_price <-  log(df$price)
+        
+```
+
+<br>
+<font size="3" color="green">Sin embargo, el test dice que no es normal.</font>
+```{r}                 
+         jarque.bera.test(log_price)
+```
+   
+   
+<br>
+<font size="3" color="green">En el gráfico qqnorm los puntos se separan en el tramo derecho de la línea</font>
+```{r}                          
+         qqnorm(log_price)
+         qqline(log_price)
+```
+<br>
+<font size="3" color="blue">2) Aplicamos Cox Box, el gráfico resulta más simétrico que el anterior. </font>
+  
+````{r}                          
+          data <-  df[, c("price", "bedrooms", "bathrooms", "sqft_living", "grade")]
+            
+
+          b <- boxcox(lm(data$price ~ 1))
+          lambda <- b$x[which.max(b$y)] 
+          nuevo_price <- (df$price ^ lambda - 1) / lambda
+          dfx <- cbind(df,  nuevo_price)
+```                          
+<br>
+<font size="3" color="green">El parámetro landa sale cercano a 0, indica que la transformación apropiada es el logaritmo, pero modifico directamente los valores de la variable y los incluyo en una columna nueva.</font>
+````{r}                                    
+          dfx %>%     ggplot( aes(nuevo_price)) + 
+            geom_histogram(bins = 100)
+          
+````
+<br>
+<font size="3" color="green"> El test de Jarque Bera, sigue indicando que la variable no es normal
+          
+````{r}          
+          jarque.bera.test((nuevo_price))
+````    
+        
+<br>
+<font size="3" color="green">El gráfico qqnorm sale parecido. Aunque los tests digan lo contrario, el gráfico tiene apariencia normal.</font>
+````{r}                    
+          qqnorm(nuevo_price)
+          qqline(nuevo_price)
+````
+  
+  
+
+#### La variable independiente sqft_living:
+<br>
+<font size="3" color="blue">
+      1) Aplicamos logaritmo: </font>
+ 
+ ````{r}    
+
+          df %>%     ggplot( aes(log(sqft_living))) + 
+                geom_histogram(bins = 100)
+````
+<br>
+<font size="3" color="green">El gráfico presenta simetria.</font>
+
+````{r}    
+
+        log_sqfeet_living <-  log(df$sqft_living)
+````
+<br>
+<font size="3" color="green">Si el nivel de significancia fuera del 1%, estaríamos en la normalidad</font>
+      
+````{r}    
+jarque.bera.test(log_sqfeet_living)
+````
+<br>
+<font size="3" color="green"> El gráfico qqnorm sale casi perfecto.
+
+````{r}    
+qqnorm(log_sqfeet_living)
+qqline(log_sqfeet_living)
+````        
+<br>
+<font size="3" color="blue">2) Aplicamos Cox Box: </font>
+<br>
+<font size="3" color="green">El gráfico resulta más simétrico que el anterior</font>
+
+````{r}    
+
+data <-  df[, c("price", "bedrooms", "bathrooms", "sqft_living", "grade")]
+b <- boxcox(lm(data$sqft_living ~ 1))
+lambda <- b$x[which.max(b$y)] 
+````
+<br>
+<font size="3" color="green">
+El parámetro landa sale cercano a 0, indica que la transformación apropiada es el logaritmo, pero modifico directamente los valores
+de la variable y los incluyo en una columna nueva.</font>
+
+````{r}    
+nuevo_sqfeet <- (df$sqft_living ^ lambda - 1) / lambda
+dfy <- cbind(df,  nuevo_sqfeet)
+dfy %>%     ggplot( aes(nuevo_sqfeet)) + 
+  geom_histogram(bins = 100)
+````
+<br>
+<font size="3" color="green">El test de Jarque Bera,  la variable  es normal. </font>
+````{r}    
+jarque.bera.test((nuevo_sqfeet))
+````
+<br>
+<font size="3" color="green">El gráfico qqnorm es muy bueno.</font>
+````{r}    
+qqnorm(nuevo_sqfeet)
+qqline(nuevo_sqfeet)
+````
+
+### Latitud y longitud:
+    
+<br>    
+   <font size="3" color="green"> Aunque más adelante estudiaremos las correlaciones en profundidad, voy a analizar con más detalle la influencia de la localización de la casa en su valoración, a través de las variables longitud y latitud. Para ello, y para facilitar la visualización creo  dos columnas nuevas: una en la que detallaré el precio por m2; en la otra clasificaré por deciles de cada uno de los registros.</font>
+    
+````{r}    
+
+dfq <- df %>% mutate(mt = price/sqft_living)
+dfq$clas <- ntile(dfq$mt, 10)
+````
+<br>
+<font size="3" color="green">Aquí represento la interacción en varios gráficos.En este primer gráfico se muestran las casas según el decil en el
+que se encuentra su precio por metro cuadrado. Podemos observar (en negro y amarillo) donde se encuentran las propiedades
+más valiosas. Habrá que incluir latitud y longitud en los modelos a estudiar.</font>
+
+````{r} 
+
+dfq %>%
+  select( mt,price, lat, long, zipcode,clas) %>%
+  
+  ggplot() + 
+  geom_point(aes(x = long, y =lat, color = factor(clas),  shape=(clas<8)) )+
+  scale_colour_manual(values= c('brown', 'green', 'orange','purple', 'violet', 'pink', 'blue','red', 'yellow', 'black'))
+
+````
+<br>
+<font size="3" color="green">
+En este segundo gráfico podemos ver claramente la diferenciación geográfica por precios, al seleccionar los deciles más y menos valiosos.</font>
+
+````{r} 
+
+dfq %>%
+  select( mt,price, lat, long, zipcode,clas) %>%
+  filter(clas==1 | clas== 10) %>% 
+  ggplot() + 
+  geom_point(aes(x = long, y =lat, color = factor(clas),  shape=(clas<8)) )+
+  scale_colour_manual(values= c('brown', 'green', 'orange','purple', 'violet', 'pink', 'blue','red', 'yellow', 'black'))
+
+````
+<br>
+<font size="3" color="green">En este se ve mejor esa diferencia</font>
+
+````{r} 
+
+dfq %>%
+  select( mt,price, lat, long, zipcode,clas) %>%
+  filter(clas<4 | clas>8) %>% 
+  ggplot() + 
+  geom_point(aes(x = long, y =lat, color = factor(clas)) )+
+  scale_colour_manual(values= c('brown', 'green', 'orange','purple', 'violet', 'pink', 'blue','red', 'yellow', 'black'))
+````
+<br>
+<font size="3" color="green">La variable waterfront influye en la cotización de las casas más valiosas.</font>
+
+````{r} 
+dfq %>%
+  select( mt,price, lat, long, zipcode,clas, waterfront) %>%
+  filter(waterfront== 1) %>% 
+  ggplot() + 
+  geom_point(aes(x = long, y =lat, color = factor(clas)) )+
+  scale_colour_manual(values= c('brown', 'yellow', 'orange','purple', 'violet', 'pink', 'blue','red', 'black', 'green'))
+````
+
+
+### Correlación:
+<br>
+<font size="3" color="green">Seguimos con las correlaciones entre variables numéricas:</font>
+
+<font size="3" color="green">Creo una lista con las covarianzas más relevantes (>50%)</font>
+
+````{r} 
+comatriz <- df %>%
+  select(where(is.numeric)) %>%
+  cor() 
+
+inds <- which((abs(comatriz) > 0.50) & (abs(comatriz)!= 1), arr.ind = TRUE)
+
+importantes <- data.frame(Var1 = rownames(comatriz)[inds[, 1]], 
+                          Var2 = colnames(comatriz)[inds[, 2]], 
+                          Cor = comatriz[inds]) %>% filter(Var1=="price")
+
+columnas <- c(importantes$Var2, "price", "clas")
+vargrafic <- dfq[columnas]
+columnas
+
+````
+
+<br>
+<font size="3" color="green">Las meto en un ggpairs para visualizarlas con sus relaciones.</font>
+
+````{r} 
+ggpairs(vargrafic)
+
+````
+
+<br>
+<font size="3" color="green">Hago un corrplot para ver las correlaciones graficamente.</font>
+
+````{r} 
+corrplot(vargrafic %>% cor(), method="number")
+````
+
+
+
+## Outliers y leverage:
+
+<br>
+<font size="3" color="green">Para estudiar los outliers, voy a utilizar las variables categóricas, relacionadas con las dos variables principales, precio y sqft_living. </font>
+
+````{r} 
+
+carac <- df%>% mutate(
+  grade = as.factor(grade),
+  zipcode = as.factor(zipcode),
+  condition = as.factor(condition),
+  waterfront = as.factor(waterfront))
+````
+<br>
+<font size="3" color="green">Incluyo los ids de row en el dataframe para localizar gráficamente los valores a analizar.</font>
+````{r} 
+carac["index"] <- row.names(carac)
+````
+
+<br>
+<font size="3" color="blue">
+Hago un primer gráfico,y teniendo en cuenta que los precios más caros se encuentran habitualmente en la costa, veo que hay que profundizar en los registros 7253, 9255 y 12778. Le echaré un vistazo al 3915. La casa 12778 tiene 7 habitaciones y ocho baños  pero su precio es mucho menor que el de la 7253 que también tiene más baños que habitaciones. La número 19453 debe ser un terreno, no tiene habitaciones ni baños, y un precio más bajo.La número 9255, más baños que habitaciones y tiene un precio similar a la 3915 que teniendo una superficie mayor, habiéndose renovado en el año 2001 y estando en la costa tiene un precio parecido. </font>
+
+
+````{r} 
+carac %>%
+  select(where(is.factor), price, sqft_living, index ) %>%
+  ggplot(aes(x = sqft_living, y = price, color = factor(waterfront) ,label = index)) + 
+  geom_point() +
+  geom_text(hjust=0, vjust=0)  
+````
+
+<br>
+<font size="3" color="green">Voy a utilizar este gráfico sobre este sencillo  modelo para visualizar outliers y puntos leverage. Las casas que hemos detallado anteriormente sobrepasan los límites de la distancia de cook y sd.</font>
+
+````{r} 
+modelier <- lm(price~ sqft_living, data = carac )
+ols_plot_resid_lev(modelier)
+
+````
+
+<br>
+<font size="3" color="green">Realizo el modelo sin tocar el dataframe</font>
+
+````{r} 
+modelier <- lm(price~ sqft_living + bathrooms  + grade + sqft_above +sqft_living15 , data =carac)
+summary(modelier)
+````
+<br>
+<font size="3" color="green">Elimino las observaciones problemáticas.</font>
+````{r} 
+carac_sin <- carac[-c(12778, 19453, 7253, 3915),]
+modelier <- lm(price~ sqft_living + bathrooms  + grade + sqft_above +sqft_living15 , data =carac_sin)
+summary(modelier)
+```
+<br>
+<font size="3" color="green">Lo cierto es que el R2 ajustado disminuye en este modelo quitando estas casas. Seguiremos con el dataframe original.`</font>
+
+
+
+
+# MODELOS
+
+## Primeros modelos:
+
+
+<br>
+<font size="3" color="green">Inicialmente incluyo todas las variables que tienen una correlación acusada (bathrooms,sqft_living,grade,sqft_above,sqft_living15) no chequearé los modelos hasta alcanzar valores de R interesantes (más que nada por las características de mi ordenador); empiezo con un modelo general. Vamos a trabajar sobre las columnas con más correlación
+según hemos visto anteriormente (bathrooms, sqft_living, grade, sqft_above, sqft_living15).
+</font>
+
+
+````{r} 
+#convierto en nominales estas variables
+dfq <- df%>% mutate(
+  grade = as.factor(grade),
+  zipcode = as.factor(zipcode),
+  condition = as.factor(condition),
+  waterfront = as.factor(waterfront))
+
+modelo <- lm(price~ sqft_living + bathrooms  +  sqft_above +sqft_living15 , data =dfq)
+summary(modelo)
+
+````
+
+
+<br>
+<font size="3" color="green">Nos sale un F adecuado, todas las variables son significativas, pero el R ajustado es un 50%. Ahora vamos a transformar la variable objetivo y tambien la variable independiente sqft_living</font>
+
+````{r} 
+modelo <- lm(log(price)~ log(sqft_living)+ bathrooms  +  sqft_above +sqft_living15, data =dfq )
+summary(modelo)
+````
+<br>
+<font size="3" color="green">Lo cierto es que la R ha descendido</font>
+
+<br>
+<font size="3" color="blue"> Como hemos visto antes en la EDA que la localización de la casa puede ser importante,
+incluimos también la longitud y la latitud </font>
+
+````{r} 
+modelo <- lm(log(price)~ log(sqft_living)+ lat*long+ bathrooms  + grade  + sqft_above +sqft_living15 , data = dfq )
+summary(modelo)
+````
+<br>
+<font size="3" color="blue">
+Damos un salto importante hasta el 72% de R
+hacemos un check_model para ver por donde vamos.</font>
+````{r} 
+check_model(modelo)
+````
+
+<br>
+<font size="3" color="green">Hay colinearidad, según el gráfico. No hay normalidad en los residuos</font>
+````{r} 
+moments::jarque.test(modelo$residuals)
+```` 
+
+<br>
+<font size="3" color="green">Tenemos heterocedasticidad.</font>
+
+````{r} 
+lmtest::bptest(modelo)
+````
+
+
+## Modelo con dummies:
+
+<br>
+<font size="3" color="green">Ahora lo que voy a hacer es crear dummies con el campo zipcode, para ver si podemos mejorar el modelo.</font>
+
+
+````{r} 
+dfdummy <- dummy_cols(df, select_columns = 'zipcode')
+````
+
+<br>
+<font size="3" color="green"> Con este modelo que incluye lat y long, el VIF se dispara </font>
+
+````{r} 
+datando <- dfdummy %>% select(contains('zipcode_'), price, grade, sqft_living, lat, long)
+#quito una columna para no caer en la Dummy Trap
+datando <- subset(datando, select=-c(zipcode_98001))
+modelo <- lm(log(price) ~ ., data = datando, na.action = na.exclude)
+summary(modelo)
+vif(modelo)
+````
+<br>
+<font size="3" color="green"> Podemos observar los valores de VIF para latitud y longitud . </font>
+
+
+<br>
+<font size="3" color="blue">Con este nuevo modelo, los valores de colinearidad se contienen y el R se mantiene.</font>
+
+````{r} 
+datando <- dfdummy %>% select(contains('zipcode_'), price, grade, sqft_living)
+datando <- subset(datando, select=-c(zipcode_98001))
+modelo <- lm(log(price) ~ ., data = datando, na.action = na.exclude)
+summary(modelo)
+````
+
+<br>
+<font size="3" color="green"> Los valores de colinearidad son asumibles. </font> 
+
+
+````{r} 
+vif(modelo)
+
+````
+
+````{r} 
+check_model(modelo)
+````
+
+<br>
+<font size="3" color="green">Parece que waterfront y condition también aportan al modelo. R  sube ligeramente, puede ser por la adición de nuevas variables.</font>
+
+````{r} 
+datando <- dfdummy %>% select(contains('zipcode_'), price, grade, waterfront, condition, sqft_living)
+datando <- subset(datando, select=-c(zipcode_98001))
+modelo <- lm(log(price) ~ ., data = datando, na.action = na.exclude)
+````
+<br>
+<font size="3" color="green">Se ha llegado  a un buen R ajustado. Casi todas las variables aportan al modelo.</font>
+````{r} 
+summary(modelo)
+````
+
+<br>
+<font size="3" color="green">Tenemos heterocedasticidad.</font>
+````{r} 
+lmtest::bptest(modelo)
+````
+
+<br>
+<font size="3" color="green">No hay normalidad en los residuos.</font>
+````{r} 
+moments::jarque.test(modelo$residuals)
+````
+
+<br>
+<font size="3" color="green">Aunque el gráfico de los residuos parece bastante simétrico.</font>
+
+
+````{r} 
+ggplot(data = modelo , aes(x = modelo$residuals)) +
+  geom_histogram(bins = 50) 
+````
+
+<br>
+<font size="3" color="green">No hay colinearidad.</font>
+
+````{r}
+vif(modelo)
+check_model(modelo)
+
+````
+
+```
+
+<br>
+<font size="3" color="blue">En este último apartado, genero las predicciones en base a dos datasets, train y test, y evalúo el RMSE y la R.Así podré compararlas con el resto de modelos.</font>
+
+
+````{r}
+
+
+dfdummyx <- dummy_cols(df, select_columns = 'zipcode')
+datandox <- dfdummy %>% select(contains('zipcode_'), price, grade, waterfront, condition, sqft_living)
+datandox <- subset(datandox, select=-c(zipcode_98001))
+
+
+#genero train y test
+train_test_split <- initial_split(datandox, 0.9) 
+train <- training(train_test_split)
+test <- testing(train_test_split)
+
+#hago la regresión respecto a las predictoras
+modelopred <- lm(log(price) ~ ., data = train, na.action = na.exclude)
+prediction <- predict(modelopred, newdata = test) %>% exp()
+
+
+
+#utilizo esta función para evaluar RMSE Y R
+eval_results <- function(true, predicted, df) {
+  SSE <- sum((predicted - true)^2)
+  SST <- sum((true - mean(true))^2)
+  R_square <- 1 - SSE / SST
+  RMSE = sqrt(SSE/nrow(df))
+  
+  
+  data.frame(
+    RMSE = RMSE,
+    Rsquare = R_square
+  )
+}
+
+eval_results(test$price, prediction ,test)
+
+
+````
+
+
+
+
+
+
+
+    

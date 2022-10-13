@@ -24,7 +24,7 @@ mibase = myclient["vih"]
 #creo una tabala en la base de datos nueva
 mitabla = mibase["datos"]
 
-#inserto el diccionario tal cual en mongo, tal cual.
+#inserto el diccionario tal cual en mongo.
 mitabla.insert_many(diccionario)
 
 

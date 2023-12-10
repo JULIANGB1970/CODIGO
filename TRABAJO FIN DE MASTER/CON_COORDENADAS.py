@@ -19,7 +19,7 @@ hago un reverse geocoding para obtenerla dandole a Google la latitud y la longit
 
 
 
-os.environ["GOOGLE_API_KEY"] = "AIzaSyCt7eyD5OL58jKjx6YdHcJoLhe4bQzf6bQ"
+os.environ["GOOGLE_API_KEY"] = ""
 
 import geocoder
 

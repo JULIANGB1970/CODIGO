@@ -1,0 +1,27 @@
+
+
+Esta es una aplicación  de gestión de asegurados en una base de datos Access gestionada mediante VBA.
+
+Los datos de las diferentes tablas, los he creado mediante un script de Python valiéndome de la librería faker. 
+
+Son las siguientes: 
+
+	*Clientes
+	*Polizas
+	*Recibos
+	*Pagos
+	*Siniestros
+	*Auditoria
+	*Clientes_Historico
+	*UsuariosRoles
+
+
+Hay un formulario principal, desde donde se accede a la tabla de asegurados, a administración y a auditoria.
+
+En el formulario de clientes aparecen los datos de clientes, un subformulario de polizas y otro de siniestros asociados a cada cliente. Se pueden editar, eliminar... aunque hay controles de operativa programados en los botones, impidiendo por ejemplo que se eliminen asegurados que tienen recibos pendientes de pago. 
+
+Además hay un control de acciones realizadas por el usuario. Cualquier acción realizada de eliminación o edición queda registrada en la tabla Auditoría y se conservan los datos originales en la tabla Clientes_Histórico. En el formulario de auditoria, puede verse cada acción realizada por el usuario y los datos originales anteriores a esa acción.
+
+Existe un control de usuarios diseñado de la siguiente manera: VBA lee el usuario desde Active Directory y obtiene su rol de la tabla UsuariosRoles. Si el usuario es Responsable puede acceder al formulario de Auditoria. 
+
+Por último, existe la posibilidad de conectarse a un origen de datos en SQL Server (deshabilitado por operativa; si se recupera la copia bak de SQL Server y se indica la dirección del servidor SQL, se conectaría a esa fuente de datos) o a una base de datos local en el mismo directorio. 
